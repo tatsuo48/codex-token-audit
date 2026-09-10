@@ -4,7 +4,7 @@ description: Audit past Codex CLI sessions for wasted tokens, estimate the cost 
 metadata:
   short-description: Find where Codex sessions waste tokens
   author: tatsuo48
-  version: "0.1.0"
+  version: "0.1.1"
 ---
 
 # Token Audit
