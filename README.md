@@ -19,7 +19,9 @@ what to do differently. It is the Codex counterpart of
 | R6 | Threads over 150 responses or 150k context | Every response carries the whole history |
 
 Plus an info section: cost by category and model, reasoning share of output, sessions by reasoning
-effort, output-heavy sessions, subagent share, short sessions on expensive models.
+effort, output-heavy sessions, subagent share, short sessions on expensive models. When a scan has
+cache-write tokens but the logs have no TTL split, the report notes that writes were priced at the
+30-minute rate (or at 12-hour if `cache_write_ttl` is set to `12h`).
 
 ## Install
 
@@ -73,9 +75,11 @@ Prices live in `skills/token-audit/scripts/pricing.json` (USD per 1M tokens for 
 cache multipliers). Cache writes default to the 30-minute rate (1.25× input): Codex rollouts store a
 single `cache_write_input_tokens` count and do not record whether the write used a 30-minute or
 12-hour TTL. Set `cache_write_ttl` to `"12h"` (or a per-model `cache_write` / `cache_write_ttl`) if
-you know writes used the 12-hour tier (2.5×). Unknown model ids are priced as the default model and
-listed in the report. Edit the file to add models. All amounts are estimates. If you use Codex through
-a ChatGPT plan you are not billed per token, but the same waste consumes your plan's rate limits.
+you know writes used the 12-hour tier (2.5×). The report states this assumption when cache-write
+tokens are present and no TTL split or `12h` override applies; 12-hour writes would cost up to 2×
+the amount shown. Unknown model ids are priced as the default model and listed in the report. Edit
+the file to add models. All amounts are estimates. If you use Codex through a ChatGPT plan you are not
+billed per token, but the same waste consumes your plan's rate limits.
 
 ## How it reads rollouts
 

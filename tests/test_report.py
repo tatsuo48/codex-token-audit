@@ -2,10 +2,13 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 
 from tokenaudit.loader import load_sessions
+from tokenaudit.model import Session, Turn, Usage
 from tokenaudit.pricing import Pricing
-from tokenaudit.report import build_report, render_markdown
+from tokenaudit.report import (NOTE_CACHE_WRITE_12H, NOTE_CACHE_WRITE_30M, build_report,
+                               render_markdown)
 from tokenaudit.rules import detect
 from tests.fixtures.builder import Rollout, meta_line, sessions_dir, turn_context_line, write_rollout
 
@@ -15,6 +18,13 @@ PRICING_PATH = os.path.join(
 S1 = "019a0000-0000-7000-8000-000000000001"
 S1A = "019a0000-0000-7000-8000-00000000001a"
 S2 = "019a0000-0000-7000-8000-000000000002"
+TS = datetime(2026, 9, 1, tzinfo=timezone.utc)
+
+
+def _session(usage, model="gpt-5.5", sid="s1", subagents=None):
+    turn = Turn(response_id="r0", ts=TS, model=model, usage=usage)
+    return Session(session_id=sid, project="/p", path="x", turns=[turn],
+                   subagents=list(subagents or []))
 
 
 class ReportTest(unittest.TestCase):
@@ -83,6 +93,7 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(info["short_sessions_on_expensive_models"], 2)  # s1 (5.5) and s2 (unknown->5.5)
         self.assertEqual(info["unknown_models"], ["gpt-weird-1"])
         self.assertEqual(info["skipped_files"], 0)
+        self.assertIsNone(info["cache_write_note"])
 
     def test_json_serializable_and_top_limit(self):
         json.dumps(self.report)
@@ -112,6 +123,82 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(r["info"]["reasoning"]["share"], 0.0)
         md = render_markdown(r)
         self.assertIn("Sessions: 0", md)
+        self.assertIsNone(r["info"]["cache_write_note"])
+        self.assertNotIn("1.25x input", md)
+
+
+class CacheWriteNoteTest(unittest.TestCase):
+    def setUp(self):
+        self.pricing = Pricing.load(PRICING_PATH)
+
+    def test_assumed_30m_when_writes_have_no_ttl_split(self):
+        r = build_report([_session(Usage(input=1000, cache_write=400))], [], self.pricing)
+        self.assertEqual(r["info"]["cache_write_note"], NOTE_CACHE_WRITE_30M)
+        md = render_markdown(r)
+        self.assertIn(NOTE_CACHE_WRITE_30M, md)
+        self.assertIn("up to 2x the amount shown", md)
+
+    def test_12h_config_note_when_ttl_override_set(self):
+        p = Pricing({
+            "default_model": "gpt-5.5",
+            "cache_write_ttl": "12h",
+            "multipliers": {"cache_read": 0.1, "cache_write": 1.25, "cache_write_12h": 2.5},
+            "models": {"gpt-5.5": {"input": 5, "output": 30}},
+        })
+        r = build_report([_session(Usage(input=1000, cache_write=400))], [], p)
+        self.assertEqual(r["info"]["cache_write_note"], NOTE_CACHE_WRITE_12H)
+        md = render_markdown(r)
+        self.assertIn(NOTE_CACHE_WRITE_12H, md)
+        self.assertNotIn(NOTE_CACHE_WRITE_30M, md)
+
+    def test_per_model_12h_ttl_uses_config_note(self):
+        p = Pricing({
+            "default_model": "a",
+            "cache_write_ttl": "30m",
+            "multipliers": {"cache_read": 0.1, "cache_write": 1.25, "cache_write_12h": 2.5},
+            "models": {
+                "a": {"input": 5, "output": 30},
+                "b": {"input": 5, "output": 30, "cache_write_ttl": "12h"},
+            },
+        })
+        r = build_report([_session(Usage(input=1000, cache_write=400), model="b")], [], p)
+        self.assertEqual(r["info"]["cache_write_note"], NOTE_CACHE_WRITE_12H)
+
+    def test_no_note_when_log_split_present(self):
+        r = build_report(
+            [_session(Usage(input=1000, cache_write=400, cache_write_12h=100))],
+            [], self.pricing)
+        self.assertIsNone(r["info"]["cache_write_note"])
+        self.assertNotIn("1.25x input", render_markdown(r))
+
+    def test_no_note_when_split_is_explicit_zero(self):
+        r = build_report(
+            [_session(Usage(input=1000, cache_write=400, cache_write_12h=0))],
+            [], self.pricing)
+        self.assertIsNone(r["info"]["cache_write_note"])
+
+    def test_subagent_writes_trigger_note(self):
+        child = _session(Usage(input=200, cache_write=50), sid="child")
+        child.source = "subagent:thread_spawn"
+        parent = _session(Usage(input=10), sid="parent", subagents=[child])
+        r = build_report([parent], [], self.pricing)
+        self.assertEqual(r["info"]["cache_write_note"], NOTE_CACHE_WRITE_30M)
+
+    def test_mixed_30m_and_12h_config_prefers_30m_caveat(self):
+        p = Pricing({
+            "default_model": "a",
+            "multipliers": {"cache_read": 0.1, "cache_write": 1.25, "cache_write_12h": 2.5},
+            "models": {
+                "a": {"input": 5, "output": 30},
+                "b": {"input": 5, "output": 30, "cache_write_ttl": "12h"},
+            },
+        })
+        sessions = [
+            _session(Usage(input=100, cache_write=10), model="a", sid="s-a"),
+            _session(Usage(input=100, cache_write=10), model="b", sid="s-b"),
+        ]
+        r = build_report(sessions, [], p)
+        self.assertEqual(r["info"]["cache_write_note"], NOTE_CACHE_WRITE_30M)
 
 
 if __name__ == "__main__":
