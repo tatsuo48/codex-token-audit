@@ -8,12 +8,15 @@ class Usage:
     """Token usage of one model response, as reported by the Responses API.
 
     `input` is the whole prompt. `cached` and `cache_write` are the parts of that prompt
-    served from / written to the prompt cache (subsets of `input`). `output` includes
-    `reasoning`.
+    served from / written to the prompt cache (subsets of `input`). `cache_write_12h` is
+    the subset of `cache_write` billed at the 12-hour rate when the usage record exposes
+    a TTL split; `None` means the logs did not distinguish TTLs (do not guess).
+    `output` includes `reasoning`.
     """
     input: int = 0
     cached: int = 0
     cache_write: int = 0
+    cache_write_12h: Optional[int] = None
     output: int = 0
     reasoning: int = 0
 

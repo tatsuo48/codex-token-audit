@@ -7,9 +7,11 @@ All `waste` amounts are estimates of "what this would have cost less if avoided"
 Background on OpenAI prompt caching, which R1 and R2 depend on: prefixes of 1024+ tokens are cached
 automatically and served at 10% of the input price (`cached_input_tokens`). An in-memory cache entry
 lives for about 5 to 10 minutes of inactivity (up to an hour); models with extended retention keep
-the prefix for around 30 minutes and up to 24 hours. GPT-5.6 and later bill cache writes at 1.25x the
-input price (`cache_write_input_tokens`). A miss is not a surcharge: the prefix is simply billed at the
-full input price again.
+the prefix for around 30 minutes and up to 24 hours. GPT-5.6 and later bill 30-minute cache writes at
+1.25× the input price and 12-hour cache writes at 2.5× (`cache_write_input_tokens`). Codex rollouts
+currently do not split those TTLs, so this tool prices writes at 1.25× unless `cache_write_ttl` is
+`"12h"` in `pricing.json`. A miss is not a surcharge: the prefix is simply billed at the full input
+price again.
 
 ## R1 — Cache miss after an idle gap
 

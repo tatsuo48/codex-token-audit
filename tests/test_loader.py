@@ -45,6 +45,7 @@ class ParseFileTest(unittest.TestCase):
         self.assertEqual((t0.model, t0.effort), ("gpt-5.5", "high"))
         self.assertEqual((t0.usage.input, t0.usage.output, t0.usage.reasoning), (1000, 50, 20))
         self.assertEqual((t1.usage.cached, t1.usage.cache_write, t1.usage.uncached), (1000, 200, 300))
+        self.assertIsNone(t1.usage.cache_write_12h)
         self.assertEqual(t1.usage.context, 1500)
         self.assertEqual(t1.ts.isoformat(), "2026-09-01T10:02:00+00:00")
         self.assertNotIn("secret", json.dumps([t.__dict__ for t in s.turns], default=str))
@@ -183,6 +184,48 @@ class ParseFileTest(unittest.TestCase):
         path = write_rollout(self.root, SID, [meta_line(SID, T[0], cwd="/a/b")])
         self.assertIsNone(parse_file(path, SID, project_filter="zzz"))
         self.assertIsNotNone(parse_file(path, SID, project_filter="a/b"))
+
+    def test_cache_write_12h_from_nested_details(self):
+        details = {"ttl_30m_tokens": 3000, "ttl_12h_tokens": 4000}
+        s = self._parse([
+            meta_line(SID, T[0]), turn_context_line(T[0]),
+            usage_record_line(T[1], SID, "resp_1", {
+                "input": 12000, "cached": 4000, "write": 7000,
+                "cache_write_tokens_details": details,
+            }),
+            usage_record_line(T[2], SID, "resp_2", {
+                "input": 5000, "write": 1000,
+                "input_tokens_details": {"cache_write_tokens_details": {"ttl_12h_tokens": 1000}},
+            }),
+        ])
+        self.assertEqual(s.turns[0].usage.cache_write, 7000)
+        self.assertEqual(s.turns[0].usage.cache_write_12h, 4000)
+        self.assertEqual(s.turns[0].usage.uncached, 1000)
+        self.assertEqual(s.turns[1].usage.cache_write_12h, 1000)
+
+    def test_cache_write_12h_flat_alias_and_absent(self):
+        s = self._parse([
+            meta_line(SID, T[0]), turn_context_line(T[0]),
+            usage_record_line(T[1], SID, "resp_1", {
+                "input": 2000, "write": 1500, "ttl_12h_tokens": 400,
+            }),
+            usage_record_line(T[2], SID, "resp_2", {"input": 100, "write": 50}),
+        ])
+        self.assertEqual(s.turns[0].usage.cache_write_12h, 400)
+        self.assertIsNone(s.turns[1].usage.cache_write_12h)
+
+    def test_cache_write_12h_clamped_and_invalid(self):
+        s = self._parse([
+            meta_line(SID, T[0]), turn_context_line(T[0]),
+            usage_record_line(T[1], SID, "resp_1", {
+                "input": 100, "write": 10, "ttl_12h_tokens": 99,
+            }),
+            usage_record_line(T[2], SID, "resp_2", {
+                "input": 100, "write": 10, "ttl_12h_tokens": "nope",
+            }),
+        ])
+        self.assertEqual(s.turns[0].usage.cache_write_12h, 10)
+        self.assertIsNone(s.turns[1].usage.cache_write_12h)
 
     def test_zst_without_decoder_raises(self):
         path = os.path.join(self.root, "rollout-2026-09-01T10-00-00-x.jsonl.zst")

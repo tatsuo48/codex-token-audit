@@ -46,7 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sessions-dir", action="append", default=None, metavar="DIR",
                    help="rollout directory (repeatable). Default: <CODEX_HOME or ~/.codex>/sessions "
                         "and archived_sessions")
-    p.add_argument("--pricing", default=None, help="override pricing.json path")
+    p.add_argument("--pricing", default=None,
+                   help="override pricing.json path. Codex rollouts do not split 30m vs 12h "
+                        "cache writes; default is 30m (1.25x). Set cache_write_ttl to 12h in the "
+                        "file to price undifferentiated writes at 2.5x")
     p.add_argument("--threshold", action="append", default=[], metavar="NAME=VALUE",
                    help="override a detection threshold; repeatable. Known: %s" % ", ".join(sorted(DEFAULT_THRESHOLDS)))
     return p

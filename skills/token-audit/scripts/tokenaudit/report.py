@@ -1,18 +1,67 @@
 from collections import Counter, defaultdict
 from dataclasses import asdict
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
-from .model import Session
+from .model import Session, Turn
 from .pricing import Cost, Pricing
 from .rules import Finding
 
 SHORT_SESSION_TURNS = 10
 TOP_OUTPUT_SESSIONS = 5
 
+# Shown when cache writes were priced without a log TTL split. English, matching the report.
+NOTE_CACHE_WRITE_30M = (
+    "Cache-write cost is calculated at the 30-minute rate (1.25x input) because "
+    "Codex session logs do not record cache TTL. 12-hour writes cost 2.5x, i.e. "
+    "up to 2x the amount shown."
+)
+NOTE_CACHE_WRITE_12H = (
+    "Cache-write cost uses the 12-hour rate (2.5x input) applied by configuration "
+    "(cache_write_ttl=12h)."
+)
+
 
 def _cost_dict(c: Cost) -> dict:
     return {"input": c.input, "cache_write": c.cache_write, "cache_read": c.cache_read,
             "output": c.output, "total": c.total}
+
+
+def _iter_turns(sessions: List[Session]) -> Iterable[Turn]:
+    for s in sessions:
+        for t in s.turns:
+            yield t
+        for a in s.subagents:
+            for t in a.turns:
+                yield t
+
+
+def cache_write_note(sessions: List[Session], pricing: Pricing) -> Optional[str]:
+    """Caveat for undifferentiated cache writes, or None when it does not apply.
+
+    Current Codex rollouts have no 30m/12h split. Warn when writes were priced at
+    the 30-minute default; if cache_write_ttl is 12h, say that rate was applied
+    by configuration instead. Skip when there are no writes or every write had a
+    TTL split from the usage record.
+    """
+    assumed_30m = False
+    configured_12h = False
+    any_write = False
+    for t in _iter_turns(sessions):
+        u = t.usage
+        if u.cache_write <= 0:
+            continue
+        any_write = True
+        if u.cache_write_12h is not None:
+            continue
+        if pricing.rates(t.model)["write_ttl"] == "12h":
+            configured_12h = True
+        else:
+            assumed_30m = True
+    if not any_write or not (assumed_30m or configured_12h):
+        return None
+    if assumed_30m:
+        return NOTE_CACHE_WRITE_30M
+    return NOTE_CACHE_WRITE_12H
 
 
 def build_report(sessions: List[Session], findings: List[Finding], pricing: Pricing,
@@ -96,6 +145,7 @@ def build_report(sessions: List[Session], findings: List[Finding], pricing: Pric
             "short_sessions_on_expensive_models": short_expensive,
             "unknown_models": sorted(pricing.unknown_models),
             "skipped_files": skipped_files,
+            "cache_write_note": cache_write_note(sessions, pricing),
         },
     }
 
@@ -120,6 +170,9 @@ def render_markdown(r: dict) -> str:
     L.append("- Sessions: %d (subagent threads: %d)" % (r["sessions"], r["info"]["subagents"]["count"]))
     L.append("- Total estimated cost: %s" % _usd(r["totals"]["total"]))
     L.append("- All amounts are estimates from rollout usage fields and the bundled price table.")
+    note = r["info"].get("cache_write_note")
+    if note:
+        L.append("- " + note)
 
     tot = r["totals"]["total"] or 1.0
     L += ["", "## Cost by category", "", "| Category | USD | Share |", "|---|---|---|"]
