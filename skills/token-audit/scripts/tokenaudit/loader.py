@@ -82,11 +82,50 @@ def open_rollout(path: str):
     return open(path, encoding="utf-8", errors="replace")
 
 
+# Codex TokenUsage is flat (`cache_write_input_tokens` only). The Responses API also
+# reports `cache_write_tokens_details.ttl_12h_tokens`; look for that split if present.
+_TTL_12H_PATHS = (
+    ("input_tokens_details", "cache_write_tokens_details", "ttl_12h_tokens"),
+    ("cache_write_tokens_details", "ttl_12h_tokens"),
+    ("cache_write_12h_input_tokens",),
+    ("ttl_12h_tokens",),
+)
+
+
+def _walk(d, *path):
+    cur = d
+    for key in path:
+        if not isinstance(cur, dict) or key not in cur:
+            return None
+        cur = cur[key]
+    return cur
+
+
+def _cache_write_12h(u: dict) -> Optional[int]:
+    """12-hour cache-write tokens if the usage object exposes a TTL split, else None.
+
+    Do not infer a TTL when the field is absent: Codex currently drops
+    `cache_write_tokens_details` before writing the rollout.
+    """
+    for path in _TTL_12H_PATHS:
+        val = _walk(u, *path)
+        if val is not None:
+            try:
+                return int(val or 0)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
 def _usage(u: dict) -> Usage:
+    cache_write = int(u.get("cache_write_input_tokens") or 0)
+    raw_12h = _cache_write_12h(u)
+    cache_write_12h = min(raw_12h, cache_write) if raw_12h is not None else None
     return Usage(
         input=int(u.get("input_tokens") or 0),
         cached=int(u.get("cached_input_tokens") or 0),
-        cache_write=int(u.get("cache_write_input_tokens") or 0),
+        cache_write=cache_write,
+        cache_write_12h=cache_write_12h,
         output=int(u.get("output_tokens") or 0),
         reasoning=int(u.get("reasoning_output_tokens") or 0),
     )

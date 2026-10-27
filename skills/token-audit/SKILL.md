@@ -4,7 +4,7 @@ description: Audit past Codex CLI sessions for wasted tokens, estimate the cost 
 metadata:
   short-description: Find where Codex sessions waste tokens
   author: tatsuo48
-  version: "0.1.6"
+  version: "0.1.7"
 ---
 
 # Token Audit
@@ -63,6 +63,6 @@ files yourself: they are large, and reading them would itself waste tokens.
 --top N             number of findings (default 10)
 --format md|json    output format (default md)
 --sessions-dir P    rollout directory (repeatable; default: CODEX_HOME sessions + archived_sessions)
---pricing P         override pricing.json
+--pricing P         override pricing.json (set cache_write_ttl to 12h there for 2.5x writes)
 --threshold K=V     override a detection threshold (repeatable)
 ```

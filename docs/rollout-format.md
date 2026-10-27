@@ -19,7 +19,12 @@ The analyzer decodes only these record types:
 
 Usage fields: `input_tokens` is the whole prompt; `cached_input_tokens` and
 `cache_write_input_tokens` are the parts of it served from / written to the prompt cache;
-`output_tokens` includes `reasoning_output_tokens`.
+`output_tokens` includes `reasoning_output_tokens`. Codex's `TokenUsage` does not currently
+distinguish 30-minute vs 12-hour cache writes — the Responses API's
+`input_tokens_details.cache_write_tokens_details.{ttl_30m_tokens,ttl_12h_tokens}` is flattened
+to a single `cache_write_input_tokens` before the rollout is written. When a usage object does
+include that split, the analyzer prices the 12-hour portion at 2.5×; otherwise all writes use
+the 30-minute 1.25× rate (override with `cache_write_ttl` in `pricing.json`).
 
 Subagent threads (`source.subagent.thread_spawn`) start with a replay of the parent's context.
 Records whose `ordinal` is below `subagent_history_start_ordinal` are skipped, and

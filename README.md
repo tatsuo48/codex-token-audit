@@ -70,9 +70,12 @@ python3 skills/token-audit/scripts/analyze.py --project my-repo --threshold r3_m
 ## Pricing
 
 Prices live in `skills/token-audit/scripts/pricing.json` (USD per 1M tokens for the OpenAI API, plus
-cache multipliers). Unknown model ids are priced as the default model and listed in the report. Edit
-the file to add models. All amounts are estimates. If you use Codex through a ChatGPT plan you are not
-billed per token, but the same waste consumes your plan's rate limits.
+cache multipliers). Cache writes default to the 30-minute rate (1.25× input): Codex rollouts store a
+single `cache_write_input_tokens` count and do not record whether the write used a 30-minute or
+12-hour TTL. Set `cache_write_ttl` to `"12h"` (or a per-model `cache_write` / `cache_write_ttl`) if
+you know writes used the 12-hour tier (2.5×). Unknown model ids are priced as the default model and
+listed in the report. Edit the file to add models. All amounts are estimates. If you use Codex through
+a ChatGPT plan you are not billed per token, but the same waste consumes your plan's rate limits.
 
 ## How it reads rollouts
 

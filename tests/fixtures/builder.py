@@ -14,8 +14,15 @@ def _line(ts, typ, payload, ordinal=None):
     return json.dumps(d)
 
 
+_USAGE_SHORT = {"input", "cached", "write", "output", "reasoning"}
+
+
 def _usage(u):
-    """u keys: input, cached, write, output, reasoning (all optional)."""
+    """u keys: input, cached, write, output, reasoning (all optional).
+
+    Any other key is copied onto the usage object so tests can attach a TTL split
+    (`cache_write_tokens_details`, `ttl_12h_tokens`, ...).
+    """
     u = u or {}
     d = dict(_ZERO)
     d["input_tokens"] = u.get("input", 0)
@@ -24,6 +31,9 @@ def _usage(u):
     d["output_tokens"] = u.get("output", 0)
     d["reasoning_output_tokens"] = u.get("reasoning", 0)
     d["total_tokens"] = d["input_tokens"] + d["output_tokens"]
+    for k, v in u.items():
+        if k not in _USAGE_SHORT:
+            d[k] = v
     return d
 
 
