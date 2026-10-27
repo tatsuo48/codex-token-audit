@@ -187,14 +187,13 @@ class ParseFileTest(unittest.TestCase):
 
     def test_cache_write_12h_from_nested_details(self):
         details = {"ttl_30m_tokens": 3000, "ttl_12h_tokens": 4000}
-        r = Rollout()
         s = self._parse([
             meta_line(SID, T[0]), turn_context_line(T[0]),
             usage_record_line(T[1], SID, "resp_1", {
                 "input": 12000, "cached": 4000, "write": 7000,
                 "cache_write_tokens_details": details,
             }),
-            r.token_count_line(T[2], {
+            usage_record_line(T[2], SID, "resp_2", {
                 "input": 5000, "write": 1000,
                 "input_tokens_details": {"cache_write_tokens_details": {"ttl_12h_tokens": 1000}},
             }),
